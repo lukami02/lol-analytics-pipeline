@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+.venv/
+.pytest_cache/
+
+# Secrets
+.env
+
+# Local data
+data/sample/*.json
+
+# Editors
+.vscode/
