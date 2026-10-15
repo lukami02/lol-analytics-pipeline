@@ -11,6 +11,14 @@ class Account(RiotModel):
     tagLine: str
 
 
+class LeagueEntry(RiotModel):
+    puuid: str | None = None
+    summonerId: str | None = None
+    leaguePoints: int
+    wins: int = 0
+    losses: int = 0
+
+
 class Participant(RiotModel):
     puuid: str
     riotIdGameName: str | None = None
@@ -24,6 +32,12 @@ class Participant(RiotModel):
     win: bool
     goldEarned: int = 0
     totalMinionsKilled: int = 0
+    neutralMinionsKilled: int = 0
+    totalDamageDealtToChampions: int = 0
+    visionScore: int = 0
+    timePlayed: int = 0
+    gameEndedInSurrender: bool = False
+    gameEndedInEarlySurrender: bool = False
 
 
 class MatchMetadata(RiotModel):
