@@ -1,4 +1,5 @@
 import pytest
+from lol_analytics.bronze.store import BronzeStore
 
 @pytest.fixture
 def make_match():
@@ -9,3 +10,7 @@ def make_match():
         }
 
     return _make
+
+@pytest.fixture
+def store(tmp_path):
+    return BronzeStore(tmp_path / "bronze")
