@@ -1,9 +1,10 @@
 import asyncio
+import time
+from collections import deque
 from urllib.parse import quote
 from pydantic import ValidationError
-from lol_analytics.riot.models import Account, Match
+from lol_analytics.riot.models import Account, LeagueEntry
 import httpx
-
 
 class RiotAPIError(Exception):
     def __init__(self, status_code: int, message: str):
@@ -29,60 +30,132 @@ ERROR_MESSAGES = {
 }
 
 
+class RiotRateLimiter:
+    """
+    Proactive rate limiter supporting dual windows:
+    - Short term: e.g., 20 requests / 1 second
+    - Long term: e.g., 100 requests / 120 seconds
+    """
+    def __init__(self, short_limit: int = 20, short_window: float = 1.0, long_limit: int = 100, long_window: float = 120.0):
+        self.short_limit = short_limit
+        self.short_window = short_window
+        self.short_times = deque()
+
+        self.long_limit = long_limit
+        self.long_window = long_window
+        self.long_times = deque()
+
+        self.lock = asyncio.Lock()
+
+    async def acquire(self):
+        while True:
+            async with self.lock:
+                now = time.monotonic()
+
+                # Remove timestamps outside the sliding windows
+                while self.short_times and now - self.short_times[0] >= self.short_window:
+                    self.short_times.popleft()
+                while self.long_times and now - self.long_times[0] >= self.long_window:
+                    self.long_times.popleft()
+
+                # Check if the request can proceed
+                can_pass = (
+                    len(self.short_times) < self.short_limit and
+                    len(self.long_times) < self.long_limit
+                )
+
+                if can_pass:
+                    self.short_times.append(now)
+                    self.long_times.append(now)
+                    return
+
+                # Calculate required delay before retrying
+                wait_short = (self.short_window - (now - self.short_times[0])) if len(self.short_times) >= self.short_limit else 0
+                wait_long = (self.long_window - (now - self.long_times[0])) if len(self.long_times) >= self.long_limit else 0
+                
+                sleep_time = max(wait_short, wait_long, 0.05)
+
+            # Sleep outside the lock so other coroutines can check or queue up
+            await asyncio.sleep(sleep_time)
+
+
 class RiotClient:
     def __init__(
         self,
         api_key: str,
         region: str = "europe",
+        platform: str = "euw1",
         client: httpx.AsyncClient | None = None,
+        platform_client: httpx.AsyncClient | None = None,
         max_retries: int = 3,
         concurrency: int = 5,
+        short_limit=20, 
+        short_window=1.0, 
+        long_limit=100, 
+        long_window=120.0,
+        rate_limiter: RiotRateLimiter | None = None,
     ):
         self.max_retries = max_retries
         self._sem = asyncio.Semaphore(concurrency)
+
+        # Initialize rate limiter
+        self.rate_limiter = rate_limiter or RiotRateLimiter(
+            short_limit=short_limit, short_window=short_window, 
+            long_limit=long_limit, long_window=long_window
+        )
+
         self._client = client or httpx.AsyncClient(
             base_url=f"https://{region}.api.riotgames.com",
             headers={"X-Riot-Token": api_key},
             timeout=10.0,
         )
 
+        self._platform_client = platform_client or httpx.AsyncClient(
+            base_url=f"https://{platform}.api.riotgames.com", 
+            headers={"X-Riot-Token": api_key},
+            timeout=10.0,
+        )
+
     async def close(self):
         await self._client.aclose()
+        await self._platform_client.aclose()
 
-    async def _get(self, path: str, params: dict | None = None):
-        for attempt in range(self.max_retries + 1):
-            try:
-                resp = await self._client.get(path, params=params)
-            except httpx.RequestError as e:
-                raise RiotAPIError(503, f"Network error: {e}") from e
+    async def _get(self, path: str, params: dict | None = None, client: httpx.AsyncClient | None = None):
+        client = client or self._client
 
-            if resp.status_code == 200:
-                return resp.json()
+        async with self._sem:
+            # Proactively wait for rate limiter clearance before sending request
+            await self.rate_limiter.acquire()
 
-            # Respect Riot's rate-limit retry instructions.
-            if resp.status_code == 429:
-                if attempt < self.max_retries:
-                    retry_after = int(
-                        resp.headers.get("Retry-After", 1)
-                    )
-                    await asyncio.sleep(retry_after)
+            for attempt in range(self.max_retries + 1):
+                try:
+                    resp = await self._client.get(path, params=params)
+                except httpx.RequestError as e:
+                    raise RiotAPIError(503, f"Network error: {e}") from e
+
+                if resp.status_code == 200:
+                    return resp.json()
+
+                # Respect Riot's rate-limit retry instructions.
+                if resp.status_code == 429:
+                    if attempt < self.max_retries:
+                        retry_after = float(resp.headers.get("Retry-After", 1))
+                        await asyncio.sleep(retry_after)
+                        continue
+
+                    raise RateLimitError(429, ERROR_MESSAGES[429])
+
+                # Retry temporary server errors with exponential backoff.
+                if resp.status_code >= 500 and attempt < self.max_retries:
+                    await asyncio.sleep(2**attempt)
                     continue
 
-                raise RateLimitError(
-                    429, ERROR_MESSAGES[429]
-                )
+                message = ERROR_MESSAGES.get(resp.status_code, "Unknown error")
 
-            # Retry temporary server errors with exponential backoff.
-            if resp.status_code >= 500 and attempt < self.max_retries:
-                await asyncio.sleep(2**attempt)
-                continue
+                if resp.status_code == 404:
+                    raise NotFoundError(404, message)
 
-            message = ERROR_MESSAGES.get(resp.status_code, "Unknown error")
-
-            if resp.status_code == 404:
-                raise NotFoundError(404, message)
-
-            raise RiotAPIError(resp.status_code, message)
+                raise RiotAPIError(resp.status_code, message)
 
         raise RiotAPIError(
             500, "Request failed after all retries")
@@ -106,21 +179,51 @@ class RiotClient:
     async def get_puuid(self, game_name: str, tag_line: str) -> str:
         return (await self.get_account(game_name, tag_line)).puuid
 
-    # Retrieve match IDs for a player
-    async def get_match_ids(self, puuid: str, count: int = 20) -> list[str]:
-        count = max(1, min(count, 20))
-
-        return await self._get(
-            f"/lol/match/v5/matches/by-puuid/{puuid}/ids",
-            params={"start": 0, "count": count},
+    async def get_top_players(self, n: int = 200) -> list[LeagueEntry]:
+        data = await self._get(
+            "/lol/league/v4/challengerleagues/by-queue/RANKED_SOLO_5x5",
+            client=self._platform_client,
         )
+        entries = [self._parse(LeagueEntry, e) for e in data["entries"]]
+        entries.sort(key=lambda e: e.leaguePoints, reverse=True)
+        entries = entries[:n]
+        await asyncio.gather(*(self._ensure_puuid(e) for e in entries))
+        return entries
+
+    async def _ensure_puuid(self, entry: LeagueEntry) -> None:
+        if entry.puuid:
+            return
+        if not entry.summonerId:
+            raise RiotAPIError(502, "There is no summoners id")
+        data = await self._get(
+            f"/lol/summoner/v4/summoners/{entry.summonerId}", client=self._platform_client
+        )
+        entry.puuid = data["puuid"]
+
+    # Retrieve match IDs for a player
+    async def get_match_ids(
+        self, puuid: str, count: int = 20, start_time: int | None = None, queue: int | None = None
+    ) -> list[str]:
+        params: dict = {"start": 0, "count": max(1, min(count, 100))}
+        if start_time:
+            params["startTime"] = start_time
+        if queue:
+            params["queue"] = queue 
+        return await self._get(f"/lol/match/v5/matches/by-puuid/{puuid}/ids", params=params)
 
     # Retrieve a single match
-    async def get_match(self, match_id: str) -> Match:
-        async with self._sem:
-            data = await self._get(f"/lol/match/v5/matches/{match_id}")
-        return self._parse(Match, data)
+    async def get_match(self, match_id: str) -> dict:
+        return await self._get(f"/lol/match/v5/matches/{match_id}")
 
     # Retrieve multiple matches concurrently
-    async def get_matches(self, match_ids: list[str]) -> list[Match]:
-        return list(await asyncio.gather(*(self.get_match(m) for m in match_ids)))
+    async def get_matches(self, match_ids: list[str], skip_errors: bool = True) -> dict[str, dict]:
+        async def one(match_id: str):
+            try:
+                return match_id, await self.get_match(match_id)
+            except RiotAPIError as e:
+                if not skip_errors:
+                    raise
+                return match_id, None
+
+        results = await asyncio.gather(*(one(match_id) for match_id in match_ids))
+        return {mid: data for mid, data in results if data is not None}
