@@ -25,15 +25,27 @@ services:
       API_URL: http://api:8000
 
   etl:
-    build: .
-    profiles: ["etl"]   
-    command: >
-      sh -c "python src/lol_analytics/pipeline.py extract &&
-             python src/lol_analytics/pipeline.py load &&
-             python src/lol_analytics/pipeline.py transform"
+    image: lol-analytics
+    command: sleep infinity
     env_file: .env
+    restart: unless-stopped
     volumes:
       - ./data:/app/data
+    labels:
+      ofelia.enabled: "true"
+      ofelia.job-exec.etl.schedule: "0 30 12 * * *"
+      ofelia.job-exec.etl.command: "sh -c 'python src/lol_analytics/pipeline.py extract && python src/lol_analytics/pipeline.py load && python src/lol_analytics/pipeline.py transform'"
+
+  scheduler:
+    image: mcuadros/ofelia:latest
+    command: daemon --docker
+    restart: unless-stopped
+    environment:
+      TZ: Europe/Belgrade
+    depends_on:
+      - etl
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
 
   tests:
     build:
