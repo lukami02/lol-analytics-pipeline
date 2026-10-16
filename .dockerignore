@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+venv/
+.pytest_cache/
+
+.git
+data
+
+# Secrets
+.env
+*.key.json
+
+# Editors
+.vscode/
+*.egg-info/
+*.egg
