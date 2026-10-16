@@ -78,7 +78,7 @@ with tab_champs:
         st.info("No champions match these filters.")
     else:
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("d", f"{int(df['games'].sum()):,}")
+        c1.metric("Games", f"{int(df['games'].sum()):,}")
         c3.metric("Avg win rate", f"{df['win_rate'].mean():.1f}%")
         best = df.loc[df["win_rate"].idxmax()]
         c4.metric("Best win rate", f"{best['champion_name']} ({best['win_rate']:.1f}%)")
