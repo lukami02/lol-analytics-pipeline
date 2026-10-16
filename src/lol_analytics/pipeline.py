@@ -39,7 +39,9 @@ def do_load(s, args) -> None:
     log.info("Load done: %s", stats)
 
 def do_transform(s: Settings, args) -> None:
-    pass
+    _loader(s).run_transforms()
+    log.info("Silver + gold rebuilt")
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="LoL analytics pipeline")

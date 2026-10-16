@@ -6,6 +6,7 @@ from google.cloud import bigquery
 from google.oauth2 import service_account
 
 from lol_analytics.bronze.store import BronzeStore
+from lol_analytics.warehouse.transforms import TRANSFORMS
 from lol_analytics.warehouse.schemas import SCHEMAS
 
 DATASETS = ("bronze", "silver", "gold")
@@ -95,3 +96,12 @@ class BigQueryLoader:
             if last_n:
                 dts = dts[-last_n:]
         return [self.load_bronze_partition(store, d) for d in dts]
+
+    def run_transforms(self) -> None:
+        for name, sql in TRANSFORMS.items():
+            sql = (
+                sql.replace("{bronze}", self.bronze)
+                .replace("{silver}", self.silver)
+                .replace("{gold}", self.gold)
+            )
+            self.client.query(sql).result()
