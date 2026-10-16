@@ -12,3 +12,5 @@ data/sample/*.json
 
 # Editors
 .vscode/
+*.egg-info/
+*.egg
