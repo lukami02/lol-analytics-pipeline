@@ -63,6 +63,26 @@ async def extract_bronze(
     dt = now.date()
 
     top = await riot.get_top_players(top_n)
+
+    names = store.read_names()
+    todo = [e for e in top if e.puuid not in names]
+
+    async def fetch_name(entry) -> None:
+        try:
+            acc = await riot.get_account_by_puuid(entry.puuid)
+            if acc.gameName and acc.tagLine:
+                names[entry.puuid] = f"{acc.gameName}#{acc.tagLine}"
+        except RiotAPIError as e:
+            log.warning("Could not fetch name for %s: %s", entry.puuid[:8], e)
+
+    await asyncio.gather(*(fetch_name(e) for e in todo))
+    store.save_names(names)
+
+    log.info("Names: %d cached, %d fetched", len(top) - len(todo), len(todo))
+
+    for e in top:
+        e.summonerId = names.get(e.puuid)
+
     store.save_top_players(dt, now, [e.model_dump() for e in top])
 
     async def ids_for(entry) -> list[str]:

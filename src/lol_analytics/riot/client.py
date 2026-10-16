@@ -179,6 +179,10 @@ class RiotClient:
     async def get_puuid(self, game_name: str, tag_line: str) -> str:
         return (await self.get_account(game_name, tag_line)).puuid
 
+    async def get_account_by_puuid(self, puuid: str) -> Account:
+        path = f"/riot/account/v1/accounts/by-puuid/{quote(puuid, safe='')}"
+        return self._parse(Account, await self._get(path))
+
     async def get_top_players(self, n: int = 200) -> list[LeagueEntry]:
         data = await self._get(
             "/lol/league/v4/challengerleagues/by-queue/RANKED_SOLO_5x5",

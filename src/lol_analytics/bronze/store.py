@@ -16,6 +16,14 @@ class BronzeStore:
         tmp.write_text(json.dumps(obj, ensure_ascii=False), encoding="utf-8")
         os.replace(tmp, path) 
 
+    # names
+    def read_names(self) -> dict[str, str]:
+        path = self.root / "names.json"
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+    def save_names(self, names: dict[str, str]) -> None:
+        self._write(self.root / "names.json", names)
+
     # top players 
     def save_top_players(self, dt: date, fetched_at: datetime, entries: list[dict]) -> Path:
         path = self.root / "top_players" / f"dt={dt}" / "top_players.json"

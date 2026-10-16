@@ -81,6 +81,8 @@ patch_totals AS (
 )
 SELECT
   patch,
+  SAFE_CAST(SPLIT(patch, '.')[SAFE_OFFSET(0)] AS INT64) AS patch_major,
+  SAFE_CAST(SPLIT(patch, '.')[SAFE_OFFSET(1)] AS INT64) AS patch_minor,
   champion_name,
   position,
   COUNT(*) AS games,
