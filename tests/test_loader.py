@@ -61,3 +61,13 @@ def test_load_without_date_loads_all_days(loader, fake_bq, store, make_match):
     loader.load_bronze(store)
 
     assert {r["match_id"] for r in fake_bq.rows("matches")} == {"EUW1_1", "EUW1_2"}
+
+
+def test_transforms_have_no_unreplaced_placeholders(loader, fake_bq):
+    loader.run_transforms()
+
+    assert len(fake_bq.queries) >= 5
+    for sql in fake_bq.queries:
+        assert "{bronze}" not in sql
+        assert "{silver}" not in sql
+        assert "{gold}" not in sql
