@@ -89,6 +89,6 @@ def test_failed_name_lookup_does_not_break_extract(store, make_match):
     asyncio.run(extract_bronze(riot, store, top_n=2))
 
     snapshot = store.read_top_players(store.partitions()[0])
-    assert [e["riot_id"] for e in snapshot["entries"]] == ["Faker#KR1", None]
+    assert [e["summonerId"] for e in snapshot["entries"]] == ["Faker#KR1", None]
     assert "p2" not in store.read_names()
     assert store.existing_match_ids() == {"EUW1_1", "EUW1_2", "EUW1_3"}
