@@ -100,28 +100,28 @@ with tab_champs:
             .interactive()
         )
         rule = alt.Chart(pd.DataFrame({"y": [50]})).mark_rule(strokeDash=[4, 4]).encode(y="y:Q")
-        st.altair_chart(scatter + rule, use_container_width=True)
+        st.altair_chart(scatter + rule, width="stretch")
 
         left, right = st.columns(2)
         with left:
             st.subheader("Top 10 by win rate")
             st.dataframe(
                 df.nlargest(10, "win_rate")[["champion_name", "position", "games", "win_rate"]],
-                hide_index=True, use_container_width=True,
+                hide_index=True, width="stretch",
                 column_config={"win_rate": st.column_config.NumberColumn(format="%.1f%%")},
             )
         with right:
             st.subheader("Top 10 by pick rate")
             st.dataframe(
                 df.nlargest(10, "pick_rate")[["champion_name", "position", "games", "pick_rate"]],
-                hide_index=True, use_container_width=True,
+                hide_index=True, width="stretch",
                 column_config={"pick_rate": st.column_config.NumberColumn(format="%.1f%%")},
             )
 
         st.subheader("Full table")
         st.dataframe(
             df.sort_values("games", ascending=False),
-            hide_index=True, use_container_width=True,
+            hide_index=True, width="stretch",
             column_config={
                 "win_rate": st.column_config.ProgressColumn(
                     "Win rate", format="%.1f%%", min_value=40, max_value=60),
@@ -162,9 +162,9 @@ with tab_history:
                 tooltip=["patch", "position", "games", alt.Tooltip(f"{metric}:Q", format=".2f")],
             )
         )
-        st.altair_chart(chart, use_container_width=True)
+        st.altair_chart(chart, width="stretch")
         st.dataframe(hist.drop(columns=["champion_name"]), hide_index=True,
-                     use_container_width=True)
+                     width="stretch")
 
 
 # --------------------------------------------------------------------------
@@ -204,7 +204,7 @@ with tab_players:
                 ],
             )
         )
-        st.altair_chart(lp_chart, use_container_width=True)
+        st.altair_chart(lp_chart, width="stretch")
 
         # --- Leaderboard table ---
         st.subheader("Leaderboard")
@@ -215,7 +215,7 @@ with tab_players:
 
         st.dataframe(
             view.drop(columns=["puuid", "snapshot_date"]),
-            hide_index=True, use_container_width=True, height=600,
+            hide_index=True, width="stretch", height=600,
             column_config={
                 "rank_position": st.column_config.NumberColumn("Rank", format="%d"),
                 "riot_id": "Player",
@@ -237,5 +237,5 @@ with tab_players:
                 x=alt.X("players:Q", title="Players"),
                 y=alt.Y("champion:N", sort="-x", title=None),
             ),
-            use_container_width=True,
+            width="stretch",
         )
